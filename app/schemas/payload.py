@@ -14,6 +14,7 @@ class PayloadCreate(BaseModel):
 
 class PayloadCreated(BaseModel):
     id: str
+    created: bool
 
 
 class PayloadRead(BaseModel):

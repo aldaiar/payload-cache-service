@@ -54,8 +54,12 @@ def create_payload(
 ):
     try:
         service = PayloadService(session)
-        payload_id = service.create_payload_with_retry(data)
-        return PayloadCreated(id=payload_id)
+        payload_id, created = service.create_payload_with_retry_status(data)
+
+        return PayloadCreated(
+            id=payload_id,
+            created=created,
+        )
 
     except IntegrityError:
         raise HTTPException(

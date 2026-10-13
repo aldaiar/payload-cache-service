@@ -49,7 +49,10 @@ class PayloadService:
 
         return result
 
-    def create_payload(self, data: PayloadCreate) -> str:
+    def _create_payload_with_status(
+            self,
+            data: PayloadCreate,
+        ) -> tuple[str, bool]:
         request_hash = self.make_request_hash(data)
 
         existing = self.session.scalar(
@@ -59,7 +62,7 @@ class PayloadService:
         )
 
         if existing is not None:
-            return existing.id
+            return existing.id, False
 
         transformed_1 = [
             self.get_or_transform(value)
@@ -85,23 +88,38 @@ class PayloadService:
         self.session.add(payload)
         self.session.flush()
 
-        return payload.id
+        return payload.id, True
 
-   
-    def create_payload_with_retry(
+    
+    def create_payload(self, data: PayloadCreate) -> str:
+        payload_id, _ = self._create_payload_with_status(data)
+        return payload_id
+
+
+    
+    def create_payload_with_retry_status(
         self,
         data: PayloadCreate,
         max_attempts: int = 3,
-    ) -> str:
+    ) -> tuple[str, bool]:
         request_hash = self.make_request_hash(data)
 
         for attempt in range(max_attempts):
             try:
                 with self.session.begin():
-                    return self.create_payload(data)
+                    existing = self.session.scalar(
+                        select(Payload).where(
+                            Payload.request_hash == request_hash
+                        )
+                    )
+
+                    # Keep using create_payload so existing behavior
+                    # and concurrency tests remain valid.
+                    payload_id = self.create_payload(data)
+
+                    return payload_id, existing is None
 
             except IntegrityError:
-            
                 existing = self.session.scalar(
                     select(Payload).where(
                         Payload.request_hash == request_hash
@@ -109,13 +127,24 @@ class PayloadService:
                 )
 
                 if existing is not None:
-                    return existing.id
+                    return existing.id, False
 
-              
                 if attempt == max_attempts - 1:
                     raise
 
         raise RuntimeError("Payload creation failed")
+
+    
+    def create_payload_with_retry(
+        self,
+        data: PayloadCreate,
+        max_attempts: int = 3,
+    ) -> str:
+        payload_id, _ = self.create_payload_with_retry_status(
+            data,
+            max_attempts=max_attempts,
+        )
+        return payload_id
 
     def get_payload(self, payload_id: str) -> Payload | None:
         return self.session.get(Payload, payload_id)
