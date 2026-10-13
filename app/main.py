@@ -1,17 +1,25 @@
-import os
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+from app.database import Base, engine
+from app.models import Payload, TransformCache
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
 
 app = FastAPI(
     title="Payload Cache Service",
     description="API for storing and retrieving transformed payloads.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 
