@@ -20,3 +20,9 @@ SessionLocal = sessionmaker(
 
 class Base(DeclarativeBase):
     pass
+
+
+def get_session():
+    with SessionLocal() as session:
+        yield session
+

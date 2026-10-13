@@ -4,6 +4,7 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.models import Payload, TransformCache
 from app.schemas.payload import PayloadCreate
@@ -85,6 +86,36 @@ class PayloadService:
         self.session.flush()
 
         return payload.id
+
+   
+    def create_payload_with_retry(
+        self,
+        data: PayloadCreate,
+        max_attempts: int = 3,
+    ) -> str:
+        request_hash = self.make_request_hash(data)
+
+        for attempt in range(max_attempts):
+            try:
+                with self.session.begin():
+                    return self.create_payload(data)
+
+            except IntegrityError:
+            
+                existing = self.session.scalar(
+                    select(Payload).where(
+                        Payload.request_hash == request_hash
+                    )
+                )
+
+                if existing is not None:
+                    return existing.id
+
+              
+                if attempt == max_attempts - 1:
+                    raise
+
+        raise RuntimeError("Payload creation failed")
 
     def get_payload(self, payload_id: str) -> Payload | None:
         return self.session.get(Payload, payload_id)

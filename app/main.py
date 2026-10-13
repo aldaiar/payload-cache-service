@@ -1,11 +1,12 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
-from sqlalchemy import text
+from fastapi import Depends, FastAPI, HTTPException
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import Session
 
-from app.database import Base, SessionLocal, engine
+from app.database import Base, engine, get_session
 from app.models import Payload, TransformCache
 from app.schemas.payload import (
     PayloadCreate,
@@ -47,31 +48,33 @@ def health_check():
 
 
 @app.post("/payload", response_model=PayloadCreated)
-def create_payload(data: PayloadCreate):
+def create_payload(
+    data: PayloadCreate,
+    session: Session = Depends(get_session),
+):
     try:
-        with SessionLocal.begin() as session:
-            service = PayloadService(session)
-            payload_id = service.create_payload(data)
-
+        service = PayloadService(session)
+        payload_id = service.create_payload_with_retry(data)
         return PayloadCreated(id=payload_id)
 
     except IntegrityError:
         raise HTTPException(
             status_code=409,
-            detail="A concurrent request caused a database conflict",
+            detail="A database integrity conflict occurred",
         )
 
-
 @app.get("/payload/{payload_id}", response_model=PayloadRead)
-def read_payload(payload_id: str):
-    with SessionLocal() as session:
-        service = PayloadService(session)
-        payload = service.get_payload(payload_id)
+def read_payload(
+    payload_id: str,
+    session: Session = Depends(get_session),
+):
+    service = PayloadService(session)
+    payload = service.get_payload(payload_id)
 
-        if payload is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Payload not found",
-            )
+    if payload is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Payload not found",
+        )
 
-        return PayloadRead(output=payload.output)
+    return PayloadRead(output=payload.output)
